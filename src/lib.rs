@@ -5,5 +5,6 @@
 //! identical inputs (seeded corpus, fixed parameters), and the HTML report is
 //! byte-identical on re-render.
 
+pub mod rng;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
