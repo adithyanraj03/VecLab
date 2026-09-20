@@ -1,0 +1,11 @@
+[package]
+name = "veclab"
+version = "1.0.0"
+edition = "2021"
+description = "Approximate nearest neighbor search (HNSW) built and benchmarked from scratch - zero crates, deterministic, exact-recall ground truth."
+license = "MIT"
+
+[dependencies]
+
+[profile.release]
+opt-level = 3

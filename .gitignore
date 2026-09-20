@@ -1,0 +1,5 @@
+target/
+
+# This project never deletes files; quarantines land here and stay out of the tree
+Deleted_files/
+_future-pushes/
