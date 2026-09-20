@@ -6,5 +6,6 @@
 //! byte-identical on re-render.
 
 pub mod rng;
+pub mod vector;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
