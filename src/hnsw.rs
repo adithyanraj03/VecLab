@@ -293,8 +293,12 @@ impl Hnsw {
                     let found = self.search_layer(ep, level, self.ef_construction, v);
                     let cap = self.level_cap(level);
                     let cand: Vec<usize> = found.iter().map(|s| s.i).collect();
-                    // Heuristic selection (paper §2.4).
-                    let sel = self.select_neighbors(node, &cand, cap);
+                    // Diverse selection (paper §2.4), with a fallback to the
+                    // plain closest `cap` if the heuristic filters everything.
+                    let mut sel = self.select_neighbors(node, &cand, cap);
+                    if sel.is_empty() {
+                        sel = cand.into_iter().take(cap).collect();
+                    }
                     for &n in &sel {
                         self.levels[node][level].push(n);
                         self.levels[n][level].push(node);
