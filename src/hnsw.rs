@@ -176,6 +176,31 @@ impl Hnsw {
         *list = scored.into_iter().map(|s| s.i).collect();
     }
 
+    /// Heuristic neighbor selection (Malkov & Yashunin, §2.4, "rule 1").
+    ///
+    /// `candidates` arrive sorted by distance to `node`. A candidate is kept
+    /// only if it is closer to `node` than to EVERY already-accepted neighbor
+    /// — i.e. it is not inside the shadow of one. This keeps neighborhoods
+    /// diverse (bridges between clusters) instead of cliques of the closest
+    /// points. Degrees intentionally vary: a node may end up with fewer than
+    /// `cap` neighbors.
+    fn select_neighbors(&self, node: usize, candidates: &[usize], cap: usize) -> Vec<usize> {
+        let mut selected: Vec<usize> = Vec::new();
+        for &c in candidates {
+            if selected.len() >= cap {
+                break;
+            }
+            let dc_node = self.metric.distance(&self.vecs[node], &self.vecs[c]);
+            let shadowed = selected
+                .iter()
+                .any(|&s| self.metric.distance(&self.vecs[c], &self.vecs[s]) < dc_node);
+            if !shadowed {
+                selected.push(c);
+            }
+        }
+        selected
+    }
+
     /// Beam search at one layer: up to `ef` closest nodes to `q`, starting from `ep`.
     fn search_layer(&self, ep: usize, level: usize, ef: usize, q: &[f32]) -> Vec<Scored> {
         let mut candidates: std::collections::BinaryHeap<std::cmp::Reverse<Scored>> =
@@ -268,7 +293,8 @@ impl Hnsw {
                     let found = self.search_layer(ep, level, self.ef_construction, v);
                     let cap = self.level_cap(level);
                     let cand: Vec<usize> = found.iter().map(|s| s.i).collect();
-                    let sel: Vec<usize> = cand.into_iter().take(cap).collect();
+                    // Heuristic selection (paper §2.4).
+                    let sel = self.select_neighbors(node, &cand, cap);
                     for &n in &sel {
                         self.levels[node][level].push(n);
                         self.levels[n][level].push(node);
@@ -287,6 +313,55 @@ impl Hnsw {
                 }
             }
         }
+    }
+
+    /// Level-0 beam search started from a specific entry node.
+    ///
+    /// Useful for benchmarking entry-point quality: pass the brute-force
+    /// nearest node and see how far the graph search gets on its own.
+    pub fn search_from(&self, ep: usize, q: &[f32], k: usize, ef: usize) -> Vec<(usize, f32)> {
+        if self.vecs.is_empty() || k == 0 {
+            return Vec::new();
+        }
+        let ef = ef.max(k).max(1);
+        self.search_layer(ep, 0, ef, q)
+            .into_iter()
+            .take(k)
+            .map(|s| (s.i, s.d))
+            .collect()
+    }
+
+    /// Approximate top-`k`: `ef` must be >= `k` for meaningful recall.
+    pub fn search(&self, q: &[f32], k: usize, ef: usize) -> Vec<(usize, f32)> {
+        if self.vecs.is_empty() || k == 0 {
+            return Vec::new();
+        }
+        let ef = ef.max(k).max(1);
+        let (mut ep, mut cur) = (self.entry.unwrap(), self.max_level);
+        while cur > 0 {
+            let mut found = false;
+            while !found {
+                let mut best: Option<usize> = None;
+                let mut best_d = self.dist(ep, q);
+                for &n in self.neighbors_at(ep, cur) {
+                    let d = self.dist(n, q);
+                    if d < best_d {
+                        best_d = d;
+                        best = Some(n);
+                    }
+                }
+                match best {
+                    Some(qn) => ep = qn,
+                    None => found = true,
+                }
+            }
+            cur -= 1;
+        }
+        self.search_layer(ep, 0, ef, q)
+            .into_iter()
+            .take(k)
+            .map(|s| (s.i, s.d))
+            .collect()
     }
 
     /// The stored corpus vectors, in insertion order.
@@ -333,3 +408,10 @@ pub fn corpus_of(idx: &Hnsw) -> &Vec<Vec<f32>> {
     &idx.vecs
 }
 
+/// Recall@k of `idx.search(q, k, ef)` against brute-force ground truth.
+pub fn recall_at_k(idx: &Hnsw, q: &[f32], k: usize, ef: usize) -> f32 {
+    let exact = crate::exact::knn(q, corpus_of(idx), k, idx.metric());
+    let approx = idx.search(q, k, ef);
+    let approx_idx: Vec<usize> = approx.iter().map(|(i, _)| *i).collect();
+    crate::exact::recall_at_k(&exact, &approx_idx, k)
+}
