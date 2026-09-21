@@ -6,6 +6,7 @@
 //! byte-identical on re-render.
 
 pub mod exact;
+pub mod hnsw;
 pub mod rng;
 pub mod vector;
 
