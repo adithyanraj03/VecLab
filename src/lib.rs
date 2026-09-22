@@ -5,6 +5,7 @@
 //! identical inputs (seeded corpus, fixed parameters), and the HTML report is
 //! byte-identical on re-render.
 
+pub mod bench;
 pub mod exact;
 pub mod hnsw;
 pub mod rng;
