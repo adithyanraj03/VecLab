@@ -8,6 +8,7 @@
 pub mod bench;
 pub mod exact;
 pub mod hnsw;
+pub mod report;
 pub mod rng;
 pub mod vector;
 
